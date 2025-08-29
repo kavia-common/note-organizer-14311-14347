@@ -1,11 +1,399 @@
 ---
-import Welcome from '../components/Welcome.astro';
 import Layout from '../layouts/Layout.astro';
-
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+const apiBase = import.meta.env.PUBLIC_API_BASE_URL || '';
 ---
 
 <Layout>
-	<Welcome />
+  <section class="notes-app">
+    <div class="toolbar card">
+      <div class="search-wrap">
+        <input id="search" class="input" type="search" placeholder="Search notes by title or content..." />
+      </div>
+      <div class="actions">
+        <button id="newNoteBtn" class="btn primary">+ New Note</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="list card" id="notesList" aria-live="polite"></div>
+      <div class="editor card">
+        <form id="noteForm">
+          <input type="hidden" id="noteId" />
+          <div class="field">
+            <label for="title">Title</label>
+            <input id="title" class="input" type="text" placeholder="Note title" required />
+          </div>
+          <div class="field">
+            <label for="content">Content</label>
+            <textarea id="content" class="textarea" rows="12" placeholder="Write your note..." required></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn primary">Save</button>
+            <button type="button" id="deleteBtn" class="btn danger" disabled>Delete</button>
+            <button type="reset" class="btn">Reset</button>
+          </div>
+          <p class="hint">Notes are saved locally in your browser by default. If PUBLIC_API_BASE_URL is configured, actions will use the API.</p>
+        </form>
+      </div>
+    </div>
+  </section>
 </Layout>
+
+<style>
+  .notes-app { display: flex; flex-direction: column; gap: 12px; }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 2px 10px var(--shadow-color);
+  }
+
+  .toolbar {
+    display: flex; gap: 12px; padding: 12px;
+    align-items: center; justify-content: space-between;
+  }
+
+  .search-wrap { flex: 1; }
+  .input, .textarea {
+    width: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    outline: none;
+    transition: border .15s ease, box-shadow .15s ease;
+  }
+  .input:focus, .textarea:focus {
+    border-color: color-mix(in oklab, var(--color-primary) 50%, var(--border-color));
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-primary) 15%, transparent);
+  }
+
+  .content {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 12px;
+    min-height: 60dvh;
+  }
+
+  .list { padding: 8px; min-width: 0; }
+  .list-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .list-item:hover { background: var(--bg-soft); }
+  .list-item.active {
+    background: color-mix(in oklab, var(--color-primary) 10%, var(--card-bg));
+    border-color: color-mix(in oklab, var(--color-primary) 35%, var(--border-color));
+  }
+  .meta { color: var(--text-secondary); font-size: 12px; }
+
+  .editor { padding: 12px; }
+  .field { display: grid; gap: 6px; margin-bottom: 12px; }
+  .field label { color: var(--text-secondary); font-size: 12px; }
+
+  .form-actions { display: flex; gap: 8px; }
+  .btn {
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+    border-radius: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background .15s ease, border .15s ease, color .15s ease, transform .05s ease;
+  }
+  .btn:hover { background: var(--bg-soft); }
+  .btn:active { transform: translateY(1px); }
+
+  .btn.primary {
+    background: var(--color-primary);
+    color: #ffffff;
+    border-color: color-mix(in oklab, black 10%, var(--color-primary));
+  }
+  .btn.primary:hover {
+    background: color-mix(in oklab, var(--color-primary) 85%, black);
+  }
+
+  .btn.danger {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+  .btn.danger:hover { background: #fecaca; }
+
+  .hint {
+    margin-top: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  @media (max-width: 980px) {
+    .content { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+  // PUBLIC_INTERFACE
+  /**
+   * Lightweight client for interacting with an optional notes API or falling back to localStorage.
+   * API base comes from PUBLIC_API_BASE_URL. When empty, uses localStorage persistence.
+   */
+  class NotesClient {
+    constructor(base) {
+      this.base = (base || '').replace(/\/+$/, '');
+      this.useApi = !!this.base;
+      this.storageKey = 'notes:data:v1';
+    }
+
+    // PUBLIC_INTERFACE
+    async list(query = '') {
+      if (this.useApi) {
+        const url = this.base + '/notes' + (query ? ('?q=' + encodeURIComponent(query)) : '');
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Failed to fetch notes');
+        return await res.json();
+      }
+      const items = this._load();
+      if (!query) return items;
+      const q = query.toLowerCase();
+      return items.filter(n =>
+        (n.title || '').toLowerCase().includes(q) ||
+        (n.content || '').toLowerCase().includes(q)
+      );
+    }
+
+    // PUBLIC_INTERFACE
+    async create(note) {
+      if (this.useApi) {
+        const res = await fetch(this.base + '/notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(note),
+        });
+        if (!res.ok) throw new Error('Failed to create note');
+        return await res.json();
+      }
+      const items = this._load();
+      const now = new Date().toISOString();
+      const newNote = { id: crypto.randomUUID(), title: note.title, content: note.content, createdAt: now, updatedAt: now };
+      items.unshift(newNote);
+      this._save(items);
+      return newNote;
+    }
+
+    // PUBLIC_INTERFACE
+    async update(id, patch) {
+      if (this.useApi) {
+        const res = await fetch(this.base + '/notes/' + encodeURIComponent(id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) throw new Error('Failed to update note');
+        return await res.json();
+      }
+      const items = this._load();
+      const idx = items.findIndex(n => n.id === id);
+      if (idx === -1) throw new Error('Note not found');
+      const updated = { ...items[idx], ...patch, updatedAt: new Date().toISOString() };
+      items[idx] = updated;
+      this._save(items);
+      return updated;
+    }
+
+    // PUBLIC_INTERFACE
+    async remove(id) {
+      if (this.useApi) {
+        const res = await fetch(this.base + '/notes/' + encodeURIComponent(id), { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete note');
+        return true;
+      }
+      const items = this._load();
+      const next = items.filter(n => n.id !== id);
+      this._save(next);
+      return true;
+    }
+
+    _load() {
+      try {
+        const raw = localStorage.getItem(this.storageKey);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+      } catch {
+        return [];
+      }
+    }
+    _save(arr) {
+      localStorage.setItem(this.storageKey, JSON.stringify(arr));
+    }
+  }
+
+  // App state and UI logic
+  const apiBase = {value: import.meta.env.PUBLIC_API_BASE_URL || ''}.value;
+  const client = new NotesClient(apiBase);
+
+  let state = {
+    query: '',
+    items: [],
+    selectedId: null,
+  };
+
+  const els = {
+    list: null,
+    search: null,
+    form: null,
+    id: null,
+    title: null,
+    content: null,
+    deleteBtn: null,
+    newBtn: null,
+  };
+
+  function $(id) { return document.getElementById(id); }
+
+  function formatTime(ts) {
+    try { return new Date(ts).toLocaleString(); } catch { return ''; }
+  }
+
+  function renderList() {
+    const container = els.list;
+    container.innerHTML = '';
+    if (!state.items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.style.color = 'var(--text-secondary)';
+      empty.style.padding = '24px';
+      empty.textContent = state.query ? 'No matching notes found.' : 'No notes yet. Create your first note!';
+      container.appendChild(empty);
+      return;
+    }
+    state.items.forEach(n => {
+      const item = document.createElement('div');
+      item.className = 'list-item' + (n.id === state.selectedId ? ' active' : '');
+      item.setAttribute('role', 'button');
+      item.setAttribute('tabindex', '0');
+
+      const left = document.createElement('div');
+      const title = document.createElement('div');
+      title.textContent = n.title || '(Untitled)';
+      title.style.fontWeight = '600';
+      title.style.overflow = 'hidden';
+      title.style.textOverflow = 'ellipsis';
+      title.style.whiteSpace = 'nowrap';
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = 'Updated ' + formatTime(n.updatedAt || n.createdAt);
+
+      left.appendChild(title);
+      left.appendChild(meta);
+
+      const right = document.createElement('div');
+      right.className = 'meta';
+      right.textContent = (n.content || '').slice(0, 40);
+
+      item.appendChild(left);
+      item.appendChild(right);
+
+      item.addEventListener('click', () => selectNote(n.id));
+      item.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault(); selectNote(n.id);
+        }
+      });
+
+      container.appendChild(item);
+    });
+  }
+
+  function fillEditor(note) {
+    els.id.value = note?.id || '';
+    els.title.value = note?.title || '';
+    els.content.value = note?.content || '';
+    els.deleteBtn.disabled = !note?.id;
+  }
+
+  function selectNote(id) {
+    state.selectedId = id;
+    const note = state.items.find(n => n.id === id) || null;
+    fillEditor(note);
+    renderList();
+  }
+
+  async function refreshList() {
+    const items = await client.list(state.query);
+    // Sort by updatedAt desc if available
+    items.sort((a,b)=> new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+    state.items = items;
+    // Ensure selected remains valid
+    if (state.selectedId && !state.items.find(n => n.id === state.selectedId)) {
+      state.selectedId = null;
+    }
+    renderList();
+  }
+
+  function initEvents() {
+    els.search.addEventListener('input', async (e) => {
+      state.query = e.target.value;
+      await refreshList();
+    });
+
+    els.newBtn.addEventListener('click', () => {
+      state.selectedId = null;
+      fillEditor(null);
+      els.title.focus();
+    });
+
+    els.form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = els.id.value.trim();
+      const title = els.title.value.trim();
+      const content = els.content.value.trim();
+      if (!title || !content) {
+        alert('Please enter both title and content.');
+        return;
+      }
+      if (id) {
+        const updated = await client.update(id, { title, content });
+        state.selectedId = updated.id;
+      } else {
+        const created = await client.create({ title, content });
+        state.selectedId = created.id;
+      }
+      await refreshList();
+      const current = state.items.find(n => n.id === state.selectedId);
+      fillEditor(current);
+    });
+
+    els.deleteBtn.addEventListener('click', async () => {
+      const id = els.id.value.trim();
+      if (!id) return;
+      const ok = confirm('Delete this note? This action cannot be undone.');
+      if (!ok) return;
+      await client.remove(id);
+      state.selectedId = null;
+      fillEditor(null);
+      await refreshList();
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    els.list = $('notesList');
+    els.search = $('search');
+    els.form = $('noteForm');
+    els.id = $('noteId');
+    els.title = $('title');
+    els.content = $('content');
+    els.deleteBtn = $('deleteBtn');
+    els.newBtn = $('newNoteBtn');
+
+    initEvents();
+    await refreshList();
+  });
+</script>

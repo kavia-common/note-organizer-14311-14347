@@ -1,47 +1,52 @@
-# Astro Starter Kit: Minimal
+# Notes Frontend (Astro)
 
-```sh
-npm create astro@latest -- --template minimal
-```
+A minimalistic light-themed notes application built with Astro. Features:
+- Create, edit, delete notes
+- List and search notes
+- Local persistence by default (localStorage)
+- Optional backend API via PUBLIC_API_BASE_URL
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/withastro/astro/tree/latest/examples/minimal)
-[![Open with CodeSandbox](https://assets.codesandbox.io/github/button-edit-lime.svg)](https://codesandbox.io/p/sandbox/github/withastro/astro/tree/latest/examples/minimal)
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/withastro/astro?devcontainer_path=.devcontainer/minimal/devcontainer.json)
+## Quick start
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+1) Install dependencies
+   npm install
 
-## 🚀 Project Structure
+2) Configure environment (optional)
+   Copy .env.example to your .env and set PUBLIC_API_BASE_URL to your backend URL.
+   If not set, the app will store notes in your browser (localStorage).
 
-Inside of your Astro project, you'll see the following folders and files:
+3) Run in development
+   npm run dev
+   Open the printed URL (default configured port: 3000)
+
+4) Build for production
+   npm run build
+   npm run preview
+
+## Environment variables
+
+- PUBLIC_API_BASE_URL: Base URL of the notes backend. When defined, the UI will call:
+  - GET    {PUBLIC_API_BASE_URL}/notes?q=...
+  - POST   {PUBLIC_API_BASE_URL}/notes
+  - PUT    {PUBLIC_API_BASE_URL}/notes/:id
+  - DELETE {PUBLIC_API_BASE_URL}/notes/:id
+
+If missing, all operations are handled purely in the browser with localStorage.
+
+## Design
+
+- Layout: Header with app title, left sidebar navigation, main area with list and editor.
+- Theme: Minimalistic light palette
+  - Primary:  #3B82F6
+  - Secondary:#64748B
+  - Accent:   #F59E42
+- Dark mode is supported via the existing ThemeToggle component for convenience.
 
 ```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+src/
+  layouts/Layout.astro    # App frame (header + sidebar + main)
+  pages/index.astro       # Notes UI (list, search, editor)
+  components/ThemeToggle.astro
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
-
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
-
-Any static assets, like images, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+No backend required to try it out. Set PUBLIC_API_BASE_URL later to connect to your API.
